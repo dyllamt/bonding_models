@@ -25,6 +25,68 @@ estimation power for physical interpretability.
 """
 
 
+class PairwiseElementProperty(ElementProperty):
+    """Computes features for binary compositions.
+    """
+    def __init__(self, data_source, features, stats):
+        ElementProperty.__init__(self, data_source, features, stats)
+
+    def featurize(self, comp):
+        """This featurizer requires a string representation of a composition.
+        """
+
+        all_attributes = []
+
+        pstats = ExtendedPropertyStats()
+
+        elements = [Element(i.group(0)) for i in re.finditer(
+            r"([A-Z][a-z]*)\s*([-*\.\d]*)", comp)]
+
+        for attr in self.features:
+            element_data = [self.data_source.get_elemental_property(
+                e, attr) for e in elements]
+
+            for stat in self.stats:
+                all_attributes.append(pstats.calc_stat(element_data, stat))
+
+        return all_attributes
+
+
+class ExtendedPropertyStats(PropertyStats):
+    """Extends the Property Stats featurizer to include "difference"
+    """
+
+    @staticmethod
+    def calc_stat(data_lst, stat, weights=None):
+        """
+        Compute a property statistic
+        Args:
+            data_lst (list of floats): list of values
+            stat (str) - Name of property to be compute. If there are arguments
+                to the statistics function, these should be added after the
+                name and separated by two colons. For example, the 2nd Holder
+                mean would be "holder_mean::2"
+            weights (list of floats): (Optional) weights for each element
+        Returns:
+            float - Desired statistic
+        """
+        statistics = stat.split("::")
+        return getattr(ExtendedPropertyStats, statistics[0])(data_lst, weights,
+                                                             *statistics[1:])
+
+    @staticmethod
+    def difference(data_lst, weights=None):
+        """Calculates the difference between the first two list elements
+        Args:
+            data_lst (list of floats): List of values to be assessed
+            weights: (ignored)
+        Returns:
+            minimum value
+        """
+        return (data_lst[0] - data_lst[1]) if not np.any(
+            np.isnan(data_lst)) else float("nan")
+
+
 class EnergeticsModel(MongoFrame):
     """Analyzes the energetics of half-Heusler materials from a local database.
 
@@ -311,68 +373,6 @@ class EnergeticsModel(MongoFrame):
         ax.set_zlabel('eV tet1-tet2')
         fig.colorbar(scat)
         plt.show()
-
-
-class PairwiseElementProperty(ElementProperty):
-    """Computes features for binary compositions.
-    """
-    def __init__(self, data_source, features, stats):
-        ElementProperty.__init__(self, data_source, features, stats)
-
-    def featurize(self, comp):
-        """This featurizer requires a string representation of a composition.
-        """
-
-        all_attributes = []
-
-        pstats = ExtendedPropertyStats()
-
-        elements = [Element(i.group(0)) for i in re.finditer(
-            r"([A-Z][a-z]*)\s*([-*\.\d]*)", comp)]
-
-        for attr in self.features:
-            element_data = [self.data_source.get_elemental_property(
-                e, attr) for e in elements]
-
-            for stat in self.stats:
-                all_attributes.append(pstats.calc_stat(element_data, stat))
-
-        return all_attributes
-
-
-class ExtendedPropertyStats(PropertyStats):
-    """Extends the Property Stats featurizer to include "difference"
-    """
-
-    @staticmethod
-    def calc_stat(data_lst, stat, weights=None):
-        """
-        Compute a property statistic
-        Args:
-            data_lst (list of floats): list of values
-            stat (str) - Name of property to be compute. If there are arguments
-                to the statistics function, these should be added after the
-                name and separated by two colons. For example, the 2nd Holder
-                mean would be "holder_mean::2"
-            weights (list of floats): (Optional) weights for each element
-        Returns:
-            float - Desired statistic
-        """
-        statistics = stat.split("::")
-        return getattr(ExtendedPropertyStats, statistics[0])(data_lst, weights,
-                                                             *statistics[1:])
-
-    @staticmethod
-    def difference(data_lst, weights=None):
-        """Minimum value in a list
-        Args:
-            data_lst (list of floats): List of values to be assessed
-            weights: (ignored)
-        Returns:
-            minimum value
-        """
-        return (data_lst[0] - data_lst[1]) if not np.any(
-            np.isnan(data_lst)) else float("nan")
 
 
 if __name__ == '__main__':
