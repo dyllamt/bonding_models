@@ -10,7 +10,7 @@ from torch.nn import Module, Linear
 from model_formation_enthalpy import collect_latent_model_data,\
     load_enthalpy_data
 
-"""Implements a causal model for estimating the latent bonding enthalpy
+"""Implements a causal model for estimating the latent bonding energy
 between pairwise atoms in the half-Heusler structure.
 """
 

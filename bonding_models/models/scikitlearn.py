@@ -1,13 +1,6 @@
-import re
 import numpy as np
-import matplotlib.pyplot as plt
 
-from pandas import DataFrame, concat
-
-from pymatgen.core.composition import Composition
-from pymatgen.core.composition import Element
-
-from dataspace.workspaces.local_db import MongoFrame
+from pandas import DataFrame
 
 from sklearn.linear_model import SGDRegressor
 from sklearn.ensemble import RandomForestRegressor
@@ -22,163 +15,79 @@ and the targets are assumed to be thermodynamic quantities.
 """
 
 
-class AFLOWFeatures(MongoFrame):
-    """Featurizes half-Heusler structures in a mongodb collection.
+class GSLinearModel(GridSearchCV):
+    """A linear model trained using gradient descent. A cross-vaidation loop
+    optimizes the model hyperparameters using the r2 scoring metric.
 
-    Feature vectors contain pairwise features of elemental attributes.
-
-    Attributes:
-        see MongoFrame for a list of attributes.
+    Pipeline:
+        1. StandardScaler
+        2. SGDRegressor
     """
-    def __init__(self, path='/data/db', database='aflow_HH',
-                 collection='entries'):
-        """Initializes the workspace from a pymongo.Collection spec.
-
+    def __init__(self, gs_params):
+        """
         Args:
-            path: (str) Path to the local mongodb directory.
-            database: (str) Name of the pymongo database.
-            collection: (str) Name of the pymongo collection.
-        """
-        MongoFrame.__init__(self, path=path, database=database,
-                            collection=collection)
-
-    def predict_partial_energies(self, target='energy_cell'):
-        """2. Extracts partial formation energies using linear models.
-
-        Args:
-            target: (st) The column name of the target property.
+            gs_params (dict) search parameters for hyperparameter optimization.
         """
 
-        # cleanses data of rows containing nan
-        self.memory.dropna(inplace=True)
-
-        # selects features, targets, and the analysis pipeline
-        features, target = self._select_features_target(target)
-        pipe = self._select_analyis_pipeline()
-
-        # trains optimal model (based on cross-validation scores)
-        model = self._train_best_model(pipe, features, target)
-
-        # reports the scoring for the model (regression plot and r2)
-        self._report_scoring(model, features, target)
-
-        # computes partial formation energies
-        self._compute_partial_energies(model, features)
-
-    def meta_analysis(self, target='enthalpy_formation_cell', limit=0.0):
-        """3. Performs meta analysis of the target with the partial energies.
-
-        Args:
-            target: (str) The column name of the target property.
-            limit: (float) Only analyze entries with targets less than limit.
-        """
-
-        # selects partial energies and targets
-        partials, target = self._select_partials_target(target, limit)
-
-        # plots target variable in latent space
-        self._plot_target_vs_partials(target, partials)
-
-    def to_csv(self, fname='energetics_data.csv', fdir='.'):
-        """Exports current DataFrame memory to a csv file.
-
-        Args:
-            fname: (str) Name of the saved file.
-            fdir: (str) Directory to save the file in (working dir by default).
-        """
-        self.memory.to_csv('{}/{}'.format(fdir, fname))
-
-    def _select_features_target(self, target):
-        """Returns a features DataFrame and a target DataFrame.
-        """
-        return (self.memory.filter(like='pairwise_feature'),
-                self.memory.filter(items=[target]))
-
-    def _select_partials_target(self, target, limit):
-        """Returns a features DataFrame and a target DataFrame.
-        """
-        data = self.memory.loc[self.memory[target].values < limit]
-        return (data.filter(like='partial_energy'),
-                data.filter(items=[target]))
-
-    def _select_analyis_pipeline(self):
-        """Returns a sklearn Pipeline.
-        """
+        # constructs pipline steps
         scale = StandardScaler()
         regressor = SGDRegressor()
-        return Pipeline(steps=[('scale', scale), ('regressor', regressor)])
+        pipe = Pipeline(steps=[('scale', scale), ('regressor', regressor)])
 
-    def _train_best_model(self, pipe, features, target, print_scores=True):
-        """Returns a model fit to the data.
+        # constructs the gridsearch estimator
+        GridSearchCV.__init__(pipe, gs_params, refit=True, cv=5, scoring='r2')
 
-        This method first trains models using a grid of parameters. Then the
-        model that scored the highest in cv is refit with all the data.
-        """
-        gs_params = {
-            'regressor__penalty': ['l1', 'l2'],
-            'regressor__alpha': [1e-7, 1e-6, 0.00001, 0.0001, 0.001, 0.01],
-            'regressor__tol': [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]}
-        model = GridSearchCV(pipe, gs_params, refit=True, cv=3, scoring='r2')
-        model.fit(features, target.values.flatten())
-        return model
+    def estimate_partial_energies(self, features):
+        """Returns the partial energies in each bond. Estimating the partial
+        energies is possible because each feature describes only one of the
+        bonding interactions.
 
-    def _report_scoring(self, model, features, target):
-        """Reports the model performance with a regression plot and r2.
-        """
-        print(model.best_score_, model.best_params_)
-        plt.plot(model.predict(features), target.values.flatten(), 'ko')
-        plt.xlabel('Predicted Value')
-        plt.ylabel('Actual Value')
-        plt.show()
+        Note:
+            The fit() method must be called before calling this method.
 
-    def _compute_partial_energies(self, model, features):
-        """Computes the partial formation energies, which sum to the total.
+        Args:
+            features (array-like) Pairwise bonding features that are ordered
+                according to their pairwise interactions. In addition, the
+                number of features for each bonding pair must be the same.
+
+        Returns:
+            (DataFrame) The estimated partial energies for each sample.
         """
 
-        # transforms the features using the first step of the pipeline
+        # applies the standard scaling to the features
         A, B, C = np.split(
-            model.best_estimator_.steps[0][1].transform(features), 3, axis=1)
+            self.best_estimator_.steps[0][1].transform(features), 3, axis=1)
 
         # collects the coefficients of the linear model (last pipeline step)
         a, b, c = np.split(
-            model.best_estimator_.named_steps['regressor'].coef_, 3)
+            self.best_estimator_.named_steps['regressor'].coef_, 3)
 
         # computes the partial energies, which sum to the total energy
-        self.memory['partial_energy bcc_tet1'] = np.sum(A * a, axis=1)
-        self.memory['partial_energy bcc_tet2'] = np.sum(B * b, axis=1)
-        self.memory['partial_energy tet1_tet2'] = np.sum(C * c, axis=1)
+        partials = DataFrame()
+        partials['partial_energy bcc_tet1'] = np.sum(A * a, axis=1)
+        partials['partial_energy bcc_tet2'] = np.sum(B * b, axis=1)
+        partials['partial_energy tet1_tet2'] = np.sum(C * c, axis=1)
+        return partials
 
-    def _plot_target_vs_partials(self, target, partials):
-        """Plots a target variable vs the partial energies.
+
+class GSRandomForest(GridSearchCV):
+    """A tree-based model with a cross-validation loop for optimizing model
+    hyperparameters using the r2 scoring metric.
+
+    Pipeline:
+        1. StandardScaler
+        2. RandomForestRegressor
+    """
+    def __init__(self, gs_params):
+        """
+        Args:
+            gs_params (dict) search parameters for hyperparameter optimization.
         """
 
-        # loads 3d plotting objects
-        from mpl_toolkits.mplot3d import Axes3D
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
+        # constructs pipline steps
+        scale = StandardScaler()
+        regressor = RandomForestRegressor()
+        pipe = Pipeline(steps=[('scale', scale), ('regressor', regressor)])
 
-        # plots the data
-        scat = ax.scatter(
-            partials.filter(like='bcc_tet1').values.flatten(),
-            partials.filter(like='bcc_tet2').values.flatten(),
-            partials.filter(like='tet1_tet2').values.flatten(),
-            c=target.values.flatten())
-        ax.set_xlabel('eV bcc-tet1')
-        ax.set_ylabel('eV bcc-tet2')
-        ax.set_zlabel('eV tet1-tet2')
-        fig.colorbar(scat)
-        plt.show()
-
-
-if __name__ == '__main__':
-
-    MODEL = EnergeticsModel()
-    MODEL.prepare_features(
-        criteria=None,
-        remove_selective_features=False)
-    MODEL.predict_partial_energies(
-        target='energy_cell')
-    MODEL.meta_analysis(
-        target='enthalpy_formation_cell',
-        limit=-2.0)
-    MODEL.to_csv()
+        # constructs the gridsearch estimator
+        GridSearchCV.__init__(pipe, gs_params, refit=True, cv=5, scoring='r2')
