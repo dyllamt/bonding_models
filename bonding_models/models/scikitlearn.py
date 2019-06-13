@@ -91,3 +91,18 @@ class GSRandomForest(GridSearchCV):
 
         # constructs the gridsearch estimator
         GridSearchCV.__init__(pipe, gs_params, refit=True, cv=5, scoring='r2')
+
+    def select_x_percent(features):
+        """Returns the top x% of features ranked by their importance
+
+        Note:
+            The fit() method must be called before calling this method.
+
+        Args:
+            features(array-like) Feature array passed during the call to fit().
+
+        Returns:
+            (array-like) Either a DataFrame or a numpy array of features that
+            were most predictive of the target property during training.
+        """
+        pass
