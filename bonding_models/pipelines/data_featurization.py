@@ -128,6 +128,18 @@ class AFLOWFeatures(MongoFrame):
         else:
             pass
 
+        # prepares features for storage (uid is the unique identifier)
+        features = self.memory.filter(like='pairwise_feature ')
+        uids = self.memory.filter(like='auid')
+
+        # compresses all feature columns into one column (column type is dict)
+        self.memory = features
+        self.compress_memory(column='features')
+
+        # saves the computed features for each entry
+        self.memory = concat([self.memory, uids], axis=1)
+        self.to_storage(identifier='auid')
+
     def _generate_site_collections(self):
         """Generates columns for bcc and tet atoms.
 
