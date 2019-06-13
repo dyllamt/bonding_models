@@ -23,8 +23,8 @@ class AFLOWEntries(Pipe):
         source: (Workspace) Retriever for AFLOW.
         destination: (Workspace) A local collection for the candidates.
     """
-    def __init__(self, path='/data/db', database='aflow',
-                 collection='halfheuslers'):
+    def __init__(self, path='/data/db', database='aflow_HH',
+                 collection='entries'):
         """Initializes the pipe from a pymongo.Collection spec.
 
         Args:
@@ -36,7 +36,7 @@ class AFLOWEntries(Pipe):
         self.destination = MongoFrame(path=path, database=database,
                                       collection=collection)
 
-    def build_local(self):
+    def build_collection(self):
         """Populates the half-Heusler collection with materials data.
         """
 
@@ -135,4 +135,4 @@ class AFLOWEntries(Pipe):
 if __name__ == '__main__':
 
     pipe = AFLOWEntries()
-    pipe.build_local()
+    pipe.build_collection()
