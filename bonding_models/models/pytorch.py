@@ -119,7 +119,7 @@ class LinearInteractingModel(Module):
 if __name__ == '__main__':
 
     # defines the model for testing
-    net = NeuralNetRegressor(module=LatentModel)
+    net = NeuralNetRegressor(module=NonInteractingModel)
     params = {
         'lr': [0.01],
         'max_epochs': [20],

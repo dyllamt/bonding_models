@@ -19,6 +19,8 @@ class GSLinearModel(GridSearchCV):
     """A linear model trained using gradient descent. A cross-vaidation loop
     optimizes the model hyperparameters using the r2 scoring metric.
 
+    This model also has a method for estimating partial bonding energies.
+
     Pipeline:
         1. StandardScaler
         2. SGDRegressor
@@ -73,6 +75,8 @@ class GSLinearModel(GridSearchCV):
 class GSRandomForest(GridSearchCV):
     """A tree-based model with a cross-validation loop for optimizing model
     hyperparameters using the r2 scoring metric.
+
+    This model also has a method implemented for performing feature selection.
 
     Pipeline:
         1. StandardScaler
