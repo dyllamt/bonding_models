@@ -10,7 +10,7 @@ from torch.nn import Module, Linear
 from model_formation_enthalpy import collect_latent_model_data,\
     load_enthalpy_data
 
-"""Implements a causal model for estimating the latent bonding enthalpy
+"""Implements a causal model for estimating the latent bonding energy
 between pairwise atoms in the half-Heusler structure.
 """
 
@@ -30,19 +30,19 @@ class PairwiseLayer(Module):
         return self.layer_2(latent_features)  # calculates the bond enthalpy
 
 
-class InteractionLayer(Module):
+class CompetitionLayer(Module):
     """A model for competition or cooperation between multiple pairwise bonding
     interactions. The inputs to the model are partial bonding enthalpies. The
     output of the model is the total formation enthalpy.
     """
     def __init__(self, n_input):
-        super(InteractionLayer, self).__init__()
+        super(CompetitionLayer, self).__init__()
 
     def forward(self, x):
         pass
 
 
-class LatentModel(Module):
+class NonInteractingModel(Module):
     """Model that represents the pairwise bonding enthalpies in the
     half-Heusler structure family. There are two tetrehedral sites and one
     bcc cordinated sites for a total of three unique bonding interactions.
@@ -50,7 +50,44 @@ class LatentModel(Module):
     model is the total formation enthalpy.
     """
     def __init__(self, n_input_per_pair=4, n_latent_per_pair=4):
-        super(LatentModel, self).__init__()
+        super(NonInteractingModel, self).__init__()
+        self.n_input_per_pair = n_input_per_pair
+        self.bcc_tet1 = PairwiseLayer(n_input_per_pair, n_latent_per_pair)
+        self.bcc_tet2 = PairwiseLayer(n_input_per_pair, n_latent_per_pair)
+        self.tet1_tet2 = PairwiseLayer(n_input_per_pair, n_latent_per_pair)
+        self.total = Linear(3, 1)
+
+    def forward(self, x):
+
+        # parses the input into the individual bond pairs (sub-layers)
+        input_bcc_tet1 = \
+            x[:, 0:self.n_input_per_pair]
+        input_bcc_tet2 = \
+            x[:, self.n_input_per_pair:2 * self.n_input_per_pair]
+        input_tet1_tet2 = \
+            x[:, 2 * self.n_input_per_pair:3 * self.n_input_per_pair]
+
+        # computes the individual bond enthalpies as seperate sub-layers
+        formation_bcc_tet1 = self.bcc_tet1(input_bcc_tet1)
+        formation_bcc_tet2 = self.bcc_tet2(input_bcc_tet2)
+        formation_tet1_tet2 = self.tet1_tet2(input_tet1_tet2)
+
+        # combines the individual bond enthalpies in the final layer
+        partial_enthalpies = cat(
+            [formation_bcc_tet1, formation_bcc_tet2, formation_tet1_tet2],
+            dim=1)
+        return self.total(partial_enthalpies)
+
+
+class LinearInteractingModel(Module):
+    """Model that represents the pairwise bonding enthalpies in the
+    half-Heusler structure family. There are two tetrehedral sites and one
+    bcc cordinated sites for a total of three unique bonding interactions.
+    The input to this model is twelve pariwise features. The output of the
+    model is the total formation enthalpy.
+    """
+    def __init__(self, n_input_per_pair=4, n_latent_per_pair=4):
+        super(LinearInteractingModel, self).__init__()
         self.n_input_per_pair = n_input_per_pair
         self.bcc_tet1 = PairwiseLayer(n_input_per_pair, n_latent_per_pair)
         self.bcc_tet2 = PairwiseLayer(n_input_per_pair, n_latent_per_pair)
@@ -82,7 +119,7 @@ class LatentModel(Module):
 if __name__ == '__main__':
 
     # defines the model for testing
-    net = NeuralNetRegressor(module=LatentModel)
+    net = NeuralNetRegressor(module=NonInteractingModel)
     params = {
         'lr': [0.01],
         'max_epochs': [20],
